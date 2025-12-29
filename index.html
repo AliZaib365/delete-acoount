@@ -529,10 +529,8 @@
             try {
                 const client = new Appwrite.Client().setEndpoint(config.endpoint).setProject(config.projectId);
                 databases = new Appwrite.Databases(client);
-                statusEl.textContent = 'Ready: Appwrite client initialized';
                 return true;
             } catch (err) {
-                statusEl.textContent = 'Failed to initialize Appwrite';
                 return false;
             }
         }
