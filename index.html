@@ -506,7 +506,6 @@
         const clearBtn = document.getElementById('clearBtn');
         const msgEl = document.getElementById('msg');
         const statusEl = document.getElementById('status');
-        const debugEl = document.getElementById('debugInfo');
 
         function isEmail(email) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email); }
 
@@ -523,22 +522,17 @@
         // Initialize Appwrite
         let databases = null;
         function initAppwrite() {
-            debugEl.textContent = '';
             if (!config.endpoint || !config.projectId || !config.databaseId || !config.collectionId) {
                 statusEl.textContent = 'Appwrite config missing — contact developer.';
-                debugEl.textContent = `Config: endpoint=${config.endpoint ? '✓' : '✗'}, projectId=${config.projectId ? '✓' : '✗'}, databaseId=${config.databaseId ? '✓' : '✗'}, collectionId=${config.collectionId ? '✓' : '✗'}`;
                 return false;
             }
             try {
                 const client = new Appwrite.Client().setEndpoint(config.endpoint).setProject(config.projectId);
                 databases = new Appwrite.Databases(client);
                 statusEl.textContent = 'Ready: Appwrite client initialized';
-                debugEl.textContent = `Endpoint: ${config.endpoint}\nProject: ${config.projectId}\nDatabase: ${config.databaseId}\nCollection: ${config.collectionId}`;
                 return true;
             } catch (err) {
-                console.error('Appwrite init error', err);
                 statusEl.textContent = 'Failed to initialize Appwrite';
-                debugEl.textContent = String(err);
                 return false;
             }
         }
@@ -549,20 +543,17 @@
             form.reset();
             clearMessage();
             statusEl.textContent = '';
-            debugEl.textContent = '';
             emailInput.focus();
         });
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             clearMessage();
-            debugEl.textContent = '';
 
             const email = (emailInput.value || '').trim();
             const honeypot = (hpInput.value || '').trim();
 
             if (honeypot) {
-                console.warn('Honeypot filled — suspected bot.');
                 showMessage('Blocked: suspected bot activity detected.', 'error');
                 return;
             }
@@ -588,7 +579,6 @@
 
             try {
                 // 1) Check if an entry with this email already exists
-                // Use Appwrite query to find documents with the same email
                 let existing = null;
                 try {
                     existing = await databases.listDocuments(
@@ -597,8 +587,6 @@
                         [Appwrite.Query.equal('email', email)]
                     );
                 } catch (qErr) {
-                    console.error('Error querying existing documents:', qErr);
-                    // If the query fails due to permissions (e.g. 401/403), surface a helpful message
                     if (qErr && qErr.code === 401) {
                         showMessage('401 Unauthorized when checking existing requests: the client cannot read the collection. Consider using a server-side endpoint to perform this check.', 'error');
                     } else if (qErr && qErr.code === 403) {
@@ -606,13 +594,11 @@
                     } else {
                         showMessage('Unable to verify existing requests. Please try again later.', 'error');
                     }
-                    debugEl.textContent = String(qErr);
                     submitBtn.innerHTML = originalText;
                     submitBtn.disabled = false;
                     return;
                 }
 
-                // existing may contain .total or .documents depending on SDK/response shape
                 const existsCount = (existing && (existing.total || (existing.documents && existing.documents.length))) || 0;
                 if (existsCount > 0) {
                     showMessage('This email already has a pending deletion request.', 'error');
@@ -626,28 +612,24 @@
                     email: email,
                 };
 
-                const doc = await databases.createDocument(
+                await databases.createDocument(
                     config.databaseId,
                     config.collectionId,
                     'unique()',
                     payload
                 );
 
-                console.log('Deletion request saved:', doc);
                 localStorage.setItem(LAST_SUBMIT_KEY, String(Date.now()));
                 showMessage('Deletion request submitted. Our team will review and contact you.', 'success');
                 statusEl.textContent = '';
                 setTimeout(() => { form.reset(); submitBtn.innerHTML = originalText; submitBtn.disabled = false; }, 900);
             } catch (err) {
-                console.error('Appwrite error:', err);
                 // Provide clearer guidance depending on the error
                 let errMsg = 'Unable to send request. Please try again later.';
                 if (err && err.code) {
                     if (err.code === 401 || (err.message && err.message.toLowerCase().includes('unauthorized'))) {
                         errMsg = '401 Unauthorized: The client is not permitted to write to this collection.';
                         errMsg += ' Quick checks: confirm collection permissions allow client writes (for testing) OR implement server-side function to accept requests securely.';
-                        // show extra debug info
-                        debugEl.textContent = 'Check: collection create permission, project id, CORS and endpoint certificate.';
                     } else if (err.code === 403) {
                         errMsg = '403 Forbidden: Check collection permissions and Appwrite project roles.';
                     } else if (err.message) {
@@ -659,8 +641,6 @@
                 showMessage(errMsg, 'error');
                 submitBtn.innerHTML = originalText;
                 submitBtn.disabled = false;
-                // If network-level errors (like certificate), put more info into debug element
-                if (err && err.response) debugEl.textContent = JSON.stringify(err.response, null, 2);
             }
         });
     </script>
